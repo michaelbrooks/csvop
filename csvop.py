@@ -66,7 +66,7 @@ def map_list(val_list):
     """
     return {col: i for i, col in enumerate(val_list)}
 
-_override_confirm = False
+_override_confirm = True
 def always_confirm(val):
     global _override_confirm
     _override_confirm = val
@@ -444,7 +444,7 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     
-    if args.yes:
-        always_confirm(True)
+    if not args.yes:
+        always_confirm(False)
     
     args.func(args)
