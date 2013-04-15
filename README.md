@@ -1,6 +1,8 @@
 Python CSV Operations
 =====
 
+[![Build Status](https://travis-ci.org/michaelbrooks/csvop.png)](https://travis-ci.org/michaelbrooks/csvop)
+
 csvop is a python script that defines several common
 high-level operations for CSV (comma-separated value) files,
 like adding and removing columns, splitting, and merging.
