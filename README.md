@@ -5,11 +5,22 @@ csvop is a python script that defines several common
 high-level operations for CSV (comma-separated value) files,
 like adding and removing columns, splitting, and merging.
 
+In addition to working as a command-line utility, csvop provides 
+a library of functions that can be used from other python scripts.
+
 This library was written so that a few simple but important
 transformations could be performed on CSV files without resorting
-to Excel, which is not always respectful of data format and character
+to Excel, which is not respectful of data format and character
 encoding. Unlike Excel, this library leaves all of the data 
 as it found it, as much as possible.
+
+For example, if a CSV file contains a column of large numbers, 
+such as 297837487663546305, Excel (by default) interprets these 
+as floating-point numbers, which results in a loss of precision.
+
+Moreover, when saving to a CSV file, there is no way to 
+specify the target character encoding in Excel, resulting in
+replacing any unrepresentable characters with `?`.
 
 ```bash
 # Create output.csv from input.csv, with column 3 removed.
