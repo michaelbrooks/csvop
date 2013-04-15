@@ -6,11 +6,34 @@ __author__ = "Michael Brooks"
 __copyright__ = "Copyright 2013, Michael Brooks"
 __license__ = "MIT"
 
+__all__ = ["addcolumn", "dropcolumn", "merge", "select"]
+
 import csv
-import argparse
 import os
 import itertools
 
+def make_csv(filename, values):
+    with open(filename, 'wb') as outfile:
+        writer = csv.writer(outfile)
+        for row in values:
+            writer.writerow(row)
+        
+def csv_header(filename):
+    with open(filename, 'rbU') as infile:
+        reader = csv.reader(infile)
+        header = reader.next()
+        return header
+
+def count_rows(filename):
+    with open(filename, 'rbU') as infile:
+        reader = csv.reader(infile)
+        
+        count = 0
+        for row in reader:
+            count += 1
+            
+        return count
+        
 def col_reference(header, name=None, index=None):
     """Get the index of a column given a name or index
     
@@ -43,8 +66,12 @@ def map_list(val_list):
     """
     return {col: i for i, col in enumerate(val_list)}
 
+_override_confirm = False
+def always_confirm(val):
+    global _override_confirm
+    _override_confirm = val
+    
 ## http://code.activestate.com/recipes/541096-prompt-the-user-for-confirmation/
-override_confirm = False
 def confirm(prompt=None, resp=False):
     """prompts for yes or no response from the user. Returns True for yes and
     False for no.
@@ -53,7 +80,7 @@ def confirm(prompt=None, resp=False):
     user simply types ENTER.
     """
     
-    if override_confirm:
+    if _override_confirm:
         return True
     
     if prompt is None:
@@ -111,68 +138,208 @@ def write_csv(iterator, filename, header=None, generator=None):
             rowsWritten += 1
             
     print 'Wrote %d rows and %d columns to %s' %(rowsWritten, colCount, filename)
+
     
-def addcolumn(args):
-    """Add a column with an optional name and default value at a specific index"""
-    with open(args.input, 'rbU') as infile:
+def _addcolumn_process(args):
+    return addcolumn(args.input, args.output, args.index, args.name, args.default)
+
+def _addcolumn_args(parser):
+    parser.add_argument('input', metavar="INPUT_CSV", help='A csv file to read from')
+    parser.add_argument('output', metavar="OUTPUT_CSV", help='A csv file to write to')
+    parser.add_argument('--index', '-i', type=int, help='The index to insert the column (last by default)', required=False)
+    parser.add_argument('--name', '-n', help='The name of the column to add (none by default)', required=False)
+    parser.add_argument('--default', '-d', help='The default cell value', required=False)
+    parser.set_defaults(func=_addcolumn_process)
+
+def addcolumn(input, output, index=None, col_name=None, cell_val=None):
+    """Add a column with an optional name and default value at a specific index
+    
+    Prepare the test
+    
+    >>> always_confirm(True)
+    >>> make_csv('__test__.csv', [['a', 'b', 'c']])
+    >>> csv_header('__test__.csv')
+    ['a', 'b', 'c']
+    
+    Test for adding at an index
+    
+    >>> addcolumn('__test__.csv', '__test2__.csv', 1, 'x') # doctest: +ELLIPSIS
+    Adding column "x" at index 1 with default value ""
+    ...
+    >>> csv_header('__test2__.csv')
+    ['a', 'x', 'b', 'c']
+    
+    Test for adding at the end
+    
+    >>> addcolumn('__test__.csv', '__test2__.csv', col_name="foo", cell_val='asdf') # doctest: +ELLIPSIS
+    Adding column "foo" at index 3 with default value "asdf"
+    ...
+    >>> csv_header('__test2__.csv')
+    ['a', 'b', 'c', 'foo']
+    
+    Clean up
+    
+    >>> os.remove('__test2__.csv')
+    >>> os.remove('__test__.csv')
+    """
+    
+    with open(input, 'rbU') as infile:
         reader = csv.reader(infile)
         
         # need first row for indexing
         header = reader.next()
         
         # figure out where we are adding the column
-        index = len(header)
-        if args.index is not None:
-            index = args.index
+        if index is None:
+            index = len(header)
         
         # what goes in the cells?
-        cellval = ''
-        if args.default is not None:
-            cellval = args.default
+        if cell_val is None:
+            cell_val = ''
         
         # what goes in the header? by default same as cells
-        colname = cellval
-        if args.name is not None:
-            colname = args.name
+        if col_name is None:
+            col_name = cell_val
         
-        print 'Adding column "%s" at index %d with default value "%s"' %(colname, index, cellval)
+        print 'Adding column "%s" at index %d with default value "%s"' %(col_name, index, cell_val)
         
-        def output(rowNum, row):
+        def generator(rowNum, row):
             if rowNum == 0:
                 # it is the header
-                row.insert(index, colname)
+                row.insert(index, col_name)
             else:
-                row.insert(index, cellval)
+                row.insert(index, cell_val)
             return row
         
-        write_csv(reader, args.output, header=header, generator=output)
-            
-def dropcolumn(args):
-    """Remove a column with a given name or index"""
-    with open(args.input, 'rbU') as infile:
+        write_csv(reader, output, header=header, generator=generator)
+
+
+def _dropcolumn_process(args):
+    return dropcolumn(args.input, args.output, args.index, args.name)
+
+def _dropcolumn_args(parser):
+    parser.add_argument('input', metavar="INPUT_CSV", help='A csv file to read from')
+    parser.add_argument('output', metavar="OUTPUT_CSV", help='A csv file to write to')
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--name', '-n', help='The name of the column to remove')
+    group.add_argument('--index', '-i', type=int, help='The position of the column to remove (0-indexed)')
+    parser.set_defaults(func=_dropcolumn_process)
+        
+def dropcolumn(input, output, index=None, col_name=None):
+    """Remove a column with a given name or index.
+    
+    Prepare the test
+    
+    >>> always_confirm(True)
+    >>> make_csv('__test__.csv', [['a', 'b', 'c']])
+    >>> csv_header('__test__.csv')
+    ['a', 'b', 'c']
+    
+    Test for removing by index
+    
+    >>> dropcolumn('__test__.csv', '__test2__.csv', 1) # doctest: +ELLIPSIS
+    Dropping column at index 1
+    ...
+    >>> csv_header('__test2__.csv')
+    ['a', 'c']
+    
+    Test for dropping by name
+    
+    >>> dropcolumn('__test__.csv', '__test2__.csv', col_name="c") # doctest: +ELLIPSIS
+    Dropping column "c" at index 2
+    ...
+    >>> csv_header('__test2__.csv')
+    ['a', 'b']
+    
+    Test for invalid arguments
+    
+    >>> dropcolumn('__test__.csv', '__test2__.csv') # doctest: +ELLIPSIS
+    Traceback (most recent call last):
+        ...
+    Exception: One of index and col_name must be specified
+    
+    Clean up
+    
+    >>> os.remove('__test2__.csv')
+    >>> os.remove('__test__.csv')
+    """
+    with open(input, 'rbU') as infile:
         reader = csv.reader(infile)
         
         header = reader.next()
-        name, index = col_reference(header, args.name, args.index)
         
-        if name:
-            print 'Dropping column "%s" at index %d' %(name, index)
+        if index is None and col_name is None:
+            raise Exception("One of index and col_name must be specified")
+            
+        col_name, index = col_reference(header, col_name, index)
+        
+        if col_name:
+            print 'Dropping column "%s" at index %d' %(col_name, index)
         else:
             print 'Dropping column at index %d' %(index)
         
-        def output(rowNum, row):
+        def generator(rowNum, row):
             row.pop(index)
             return row
         
-        write_csv(reader, args.output, header=header, generator=output)
+        write_csv(reader, output, header=header, generator=generator)
 
-def merge(args):
-    """Combine two tables by adjoining their rows in order"""
-    with open(args.left, 'rbU') as left, open(args.right, 'rbU') as right:
-        leftReader = csv.reader(left)
-        rightReader = csv.reader(right)
+def _merge_process(args):
+    return merge(args.left, args.right, args.output, args.stop_shorter)
+
+def _merge_args(parser):
+    parser.add_argument('left', metavar="LEFT_INPUT_CSV", help='The left input csv table')
+    parser.add_argument('right', metavar="RIGHT_INPUT_CSV", help='A right input csv table')
+    parser.add_argument('output', metavar="OUTPUT_CSV", help='A csv file to write to')
+    parser.add_argument('--stop-shorter', action='store_true', help='Stop whenever the shorter file ends', required=False)
+    parser.set_defaults(func=_merge_process)
+    
+def merge(left, right, output, stop_shorter=False):
+    """Combine two tables by adjoining their rows in order
+    
+    Prepare the test
+    
+    >>> always_confirm(True)
+    >>> make_csv('__test__.csv', [['a', 'b', 'c'], [0, 0, 0], [1, 1, 1]])
+    >>> csv_header('__test__.csv')
+    ['a', 'b', 'c']
+    >>> count_rows('__test__.csv')
+    3
+    >>> make_csv('__test2__.csv', [['x', 'y'], [0, 0], [1, 1], [2, 2]])
+    >>> csv_header('__test2__.csv')
+    ['x', 'y']
+    >>> count_rows('__test2__.csv')
+    4
+    
+    Test for regular merging
+    
+    >>> merge('__test__.csv', '__test2__.csv', '__test3__.csv') # doctest: +ELLIPSIS
+    Wrote ...
+    >>> csv_header('__test3__.csv')
+    ['a', 'b', 'c', 'x', 'y']
+    >>> count_rows('__test3__.csv')
+    4
+    
+    Test for merging, stopping when the shorter file ends
+    
+    >>> merge('__test__.csv', '__test2__.csv', '__test3__.csv', stop_shorter=True) # doctest: +ELLIPSIS
+    Wrote ...
+    >>> csv_header('__test3__.csv')
+    ['a', 'b', 'c', 'x', 'y']
+    >>> count_rows('__test3__.csv')
+    3
+    
+    Clean up
+    
+    >>> os.remove('__test3__.csv')
+    >>> os.remove('__test2__.csv')
+    >>> os.remove('__test__.csv')
+    """
+    with open(left, 'rbU') as leftfile, open(right, 'rbU') as rightfile:
+        leftReader = csv.reader(leftfile)
+        rightReader = csv.reader(rightfile)
         
-        def output(rowNum, rows):
+        def generator(rowNum, rows):
             leftRow = [] if rows[0] is None else rows[0]
             rightRow = [] if rows[1] is None else rows[1]
                 
@@ -180,26 +347,80 @@ def merge(args):
             
             return leftRow
             
-        iterator = itertools.izip(leftReader, rightReader)
-        write_csv(iterator, args.output, generator=output)
+        if stop_shorter:
+            iterator = itertools.izip(leftReader, rightReader)
+        else:
+            iterator = itertools.izip_longest(leftReader, rightReader)
+            
+        write_csv(iterator, output, generator=generator)
+
+def _select_process(args):
+    return select(args.input, args.output, args.from_, args.to)
+
+def _select_args(parser):
+    parser.add_argument('input', metavar="INPUT_CSV", help='A csv file to read from')
+    parser.add_argument('output', metavar="RIGHT_OUTPUT_CSV", help='A csv file to write the right columns to')
+    parser.add_argument('--from', dest="from_", metavar="FROM_INDEX", type=int, help='The column to start with (default 0)')
+    parser.add_argument('--to', metavar="TO_INDEX", type=int, help='The column to end with, inclusive (default last)')
+    parser.set_defaults(func=_select_args)
         
-def select(args):
-    """Select a subset of the columns by index range"""
-    with open(args.input, 'rbU') as infile:
+def select(input, output, fromIndex=None, toIndex=None):
+    """Select a subset of the columns by index range
+    
+    Prepare the test
+    
+    >>> always_confirm(True)
+    >>> make_csv('__test__.csv', [['a', 'b', 'c']])
+    >>> csv_header('__test__.csv')
+    ['a', 'b', 'c']
+    
+    Test select with both ends specified
+    
+    >>> select('__test__.csv', '__test2__.csv', 1, 3) # doctest: +ELLIPSIS
+    Selecting columns 1 through 2
+    ...
+    >>> csv_header('__test2__.csv')
+    ['b', 'c']
+    
+    Test select with only start specified
+    
+    >>> select('__test__.csv', '__test2__.csv', fromIndex=2) # doctest: +ELLIPSIS
+    Selecting columns 2 through 2
+    ...
+    >>> csv_header('__test2__.csv')
+    ['c']
+    
+    Test select with only stop specified
+    >>> select('__test__.csv', '__test2__.csv', toIndex=2) # doctest: +ELLIPSIS
+    Selecting columns 0 through 1
+    ...
+    >>> csv_header('__test2__.csv')
+    ['a', 'b']
+    
+    Clean up
+    
+    >>> os.remove('__test2__.csv')
+    >>> os.remove('__test__.csv')
+    """
+    
+    with open(input, 'rbU') as infile:
         reader = csv.reader(infile)
         
         header = reader.next()
-        fromIndex = 0 if args.from_ is None else args.from_
-        toIndex = len(header) if args.to is None else args.to
+        fromIndex = 0 if fromIndex is None else fromIndex
+        toIndex = len(header) if toIndex is None else toIndex
         
         print 'Selecting columns %d through %d' %(fromIndex, toIndex - 1)
         
-        def output(rowNum, row):
+        def generator(rowNum, row):
             return row[fromIndex:toIndex]
             
-        write_csv(reader, args.output, header=header, generator=output)
-        
+        write_csv(reader, output, header=header, generator=generator)
+
+    
 if __name__ == '__main__':
+    import argparse
+    
     # create the top-level parser
     parser = argparse.ArgumentParser(description="Perform operations on CSV files")
     parser.add_argument('--yes', action='store_true', help='Answer yes to all prompts')
@@ -207,39 +428,23 @@ if __name__ == '__main__':
     
     # create the parser for the "addcolumn" command
     addcolumn_parser = subparsers.add_parser('addcolumn', help='insert a column')
-    addcolumn_parser.add_argument('input', metavar="INPUT_CSV", help='A csv file to read from')
-    addcolumn_parser.add_argument('output', metavar="OUTPUT_CSV", help='A csv file to write to')
-    addcolumn_parser.add_argument('--index', '-i', type=int, help='The index to insert the column (last by default)', required=False)
-    addcolumn_parser.add_argument('--name', '-n', help='The name of the column to add (none by default)', required=False)
-    addcolumn_parser.add_argument('--default', '-d', help='The default cell value', required=False)
-    addcolumn_parser.set_defaults(func=addcolumn)
-
+    _addcolumn_args(addcolumn_parser)
+    
     # create the parser for the "dropcolumn" command
     dropcolumn_parser = subparsers.add_parser('dropcolumn', help='remove a column')
-    dropcolumn_parser.add_argument('input', metavar="INPUT_CSV", help='A csv file to read from')
-    dropcolumn_parser.add_argument('output', metavar="OUTPUT_CSV", help='A csv file to write to')
-    dropcolumn_group = dropcolumn_parser.add_mutually_exclusive_group(required=True)
-    dropcolumn_group.add_argument('--name', '-n', help='The name of the column to remove')
-    dropcolumn_group.add_argument('--index', '-i', type=int, help='The position of the column to remove (0-indexed)')
-    dropcolumn_parser.set_defaults(func=dropcolumn)
+    _dropcolumn_args(dropcolumn_parser)
 
+    # create the parser for the "merge" command
     merge_parser = subparsers.add_parser('merge', help='vertically merge two tables')
-    merge_parser.add_argument('left', metavar="LEFT_INPUT_CSV", help='The left input csv table')
-    merge_parser.add_argument('right', metavar="RIGHT_INPUT_CSV", help='A right input csv table')
-    merge_parser.add_argument('output', metavar="OUTPUT_CSV", help='A csv file to write to')
-    merge_parser.add_argument('--stop-shorter', action='store_true', help='Stop whenever the shorter file ends', required=False)
-    merge_parser.set_defaults(func=merge)
+    _merge_args(merge_parser)
     
+    # create the parser for the "select" command
     select_parser = subparsers.add_parser('select', help='select columns from a table, by index')
-    select_parser.add_argument('input', metavar="INPUT_CSV", help='A csv file to read from')
-    select_parser.add_argument('output', metavar="RIGHT_OUTPUT_CSV", help='A csv file to write the right columns to')
-    select_parser.add_argument('--from', dest="from_", metavar="FROM_INDEX", type=int, help='The column to start with (default 0)')
-    select_parser.add_argument('--to', metavar="TO_INDEX", type=int, help='The column to end with, inclusive (default last)')
-    select_parser.set_defaults(func=select)
+    _select_args(select_parser)
     
     args = parser.parse_args()
     
     if args.yes:
-        override_confirm = True
+        always_confirm(True)
     
     args.func(args)
