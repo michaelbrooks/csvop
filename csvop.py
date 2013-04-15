@@ -64,7 +64,10 @@ def map_list(val_list):
     >>> len(m)
     3
     """
-    return {col: i for i, col in enumerate(val_list)}
+    result = dict()
+    for i, col in enumerate(val_list):
+        result[col] = i
+    return result
 
 _override_confirm = True
 def always_confirm(val):
