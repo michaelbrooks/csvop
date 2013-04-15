@@ -80,6 +80,36 @@ csvop.py dropcolumn input.csv output.csv --name "Total"
 csvop.py dropcolumn input.csv output.csv --index 3
 ```
 
+### Rename a column
+
+Use `rename` to change the name of a column. This only alters
+the CSV header row, of course. Either a column name or index is required,
+as well as the destination column name, via the `--to` flag.
+
+Examples:
+```bash
+# Rename a column called "Total" to "TOTAL"
+csvop.py rename input.csv output.csv --name "Total" --to "TOTAL"
+
+# Rename the 3rd column to "TOTAL" (0-indexed)
+csvop.py rename input.csv output.csv --index 3 --to "TOTAL"
+```
+
+### Move a column
+
+Use `position` to move a column from one position to another.
+Either a column name or index must be provided, as well as the destination
+index via the `--to` flag.
+
+Examples:
+```bash
+# Move a column called "Total" to be the 2nd column
+csvop.py position input.csv output.csv --name "Total" --to 2
+
+# Move the 3rd column to the 4th position (0-indexed)
+csvop.py position input.csv output.csv --index 3 --to 4
+```
+
 ### Merge two tables
 
 Use `merge` to combine two tables vertically, in a simple 

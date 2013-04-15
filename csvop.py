@@ -263,13 +263,13 @@ def dropcolumn(input, output, index=None, col_name=None):
     >>> os.remove('__test2__.csv')
     >>> os.remove('__test__.csv')
     """
+    if index is None and col_name is None:
+            raise Exception("One of index and col_name must be specified")
+        
     with open(input, 'rbU') as infile:
         reader = csv.reader(infile)
         
         header = reader.next()
-        
-        if index is None and col_name is None:
-            raise Exception("One of index and col_name must be specified")
             
         col_name, index = col_reference(header, col_name, index)
         
@@ -284,6 +284,157 @@ def dropcolumn(input, output, index=None, col_name=None):
         
         write_csv(reader, output, header=header, generator=generator)
 
+def _rename_process(args):
+    return rename(args.input, args.output, args.to, index=args.index, col_name=args.name)
+
+def _rename_args(parser):
+    parser.add_argument('input', metavar="INPUT_CSV", help='A csv file to read from')
+    parser.add_argument('output', metavar="OUTPUT_CSV", help='A csv file to write to')
+    parser.add_argument('--to', help="The new name of the column", required=True)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--name', '-n', help='The name of the column to rename')
+    group.add_argument('--index', '-i', type=int, help='The position of the column to rename (0-indexed)')
+    parser.set_defaults(func=_rename_process)
+        
+def rename(input, output, to_name, index=None, col_name=None):
+    """Rename a column with a given name or index.
+    
+    Prepare the test
+    
+    >>> always_confirm(True)
+    >>> make_csv('__test__.csv', [['a', 'b', 'c']])
+    >>> csv_header('__test__.csv')
+    ['a', 'b', 'c']
+    
+    Test for renaming by index
+    
+    >>> rename('__test__.csv', '__test2__.csv', "foo", index=1) # doctest: +ELLIPSIS
+    Renaming column at index 1 to "foo"
+    ...
+    >>> csv_header('__test2__.csv')
+    ['a', 'foo', 'c']
+    
+    Test for renaming by name
+    
+    >>> rename('__test__.csv', '__test2__.csv', "foo", col_name="a") # doctest: +ELLIPSIS
+    Renaming column "a" to "foo"
+    ...
+    >>> csv_header('__test2__.csv')
+    ['foo', 'b', 'c']
+    
+    
+    Test for invalid arguments
+    
+    >>> rename('__test__.csv', '__test2__.csv', 'foo') # doctest: +ELLIPSIS
+    Traceback (most recent call last):
+        ...
+    Exception: One of index and col_name must be specified
+    
+    Clean up
+    
+    >>> os.remove('__test2__.csv')
+    >>> os.remove('__test__.csv')
+    """
+    
+    if index is None and col_name is None:
+        raise Exception("One of index and col_name must be specified")
+    
+    with open(input, 'rbU') as infile:
+        reader = csv.reader(infile)
+        
+        header = reader.next()
+            
+        col_name, index = col_reference(header, col_name, index)
+        
+        if col_name:
+            print 'Renaming column "%s" to "%s"' %(col_name, to_name)
+        else:
+            print 'Renaming column at index %d to "%s"' %(index, to_name)
+        
+        def generator(rowNum, row):
+            if rowNum == 0:
+                # only do anything to the header
+                row[index] = to_name
+                
+            return row
+        
+        write_csv(reader, output, header=header, generator=generator)
+
+        
+def _position_process(args):
+    return position(args.input, args.output, index=args.index, col_name=args.name, to_name=args.to)
+
+def _position_args(parser):
+    parser.add_argument('input', metavar="INPUT_CSV", help='A csv file to read from')
+    parser.add_argument('output', metavar="OUTPUT_CSV", help='A csv file to write to')
+    parser.add_argument('--to', type=int, help="The new position of the column", required=True)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--name', '-n', help='The name of the column to position')
+    group.add_argument('--index', '-i', type=int, help='The position of the column to position (0-indexed)')
+    parser.set_defaults(func=_position_process)
+        
+def position(input, output, to_index, index=None, col_name=None):
+    """Reposition a column with a given name or index.
+    The to_index value specifies the position of the column in the final table.
+    
+    Prepare the test
+    
+    >>> always_confirm(True)
+    >>> make_csv('__test__.csv', [['a', 'b', 'c']])
+    >>> csv_header('__test__.csv')
+    ['a', 'b', 'c']
+    
+    Test for positioning by index (and moving to the left)
+    
+    >>> position('__test__.csv', '__test2__.csv', 0, index=2) # doctest: +ELLIPSIS
+    Moving column at index 2 to index 0
+    ...
+    >>> csv_header('__test2__.csv')
+    ['c', 'a', 'b']
+    
+    Test for positioning by name (and moving to the right)
+    
+    >>> position('__test__.csv', '__test2__.csv', 1, col_name="a") # doctest: +ELLIPSIS
+    Moving column "a" to index 1
+    ...
+    >>> csv_header('__test2__.csv')
+    ['b', 'a', 'c']
+    
+    Test for invalid arguments
+    
+    >>> position('__test__.csv', '__test2__.csv', 1) # doctest: +ELLIPSIS
+    Traceback (most recent call last):
+        ...
+    Exception: One of index and col_name must be specified
+    
+    Clean up
+    
+    >>> os.remove('__test2__.csv')
+    >>> os.remove('__test__.csv')
+    """
+    
+    if index is None and col_name is None:
+        raise Exception("One of index and col_name must be specified")
+    
+    with open(input, 'rbU') as infile:
+        reader = csv.reader(infile)
+        
+        header = reader.next()
+
+        col_name, index = col_reference(header, col_name, index)
+        
+        if col_name:
+            print 'Moving column "%s" to index %d' %(col_name, to_index)
+        else:
+            print 'Moving column at index %d to index %d' %(index, to_index)
+        
+        def generator(rowNum, row):
+            row.insert(to_index, row.pop(index))
+                
+            return row
+        
+        write_csv(reader, output, header=header, generator=generator)
+        
 def _merge_process(args):
     return merge(args.left, args.right, args.output, args.stop_shorter)
 
@@ -417,6 +568,7 @@ def select(input, output, fromIndex=None, toIndex=None):
             
         write_csv(reader, output, header=header, generator=generator)
 
+        
     
 if __name__ == '__main__':
     import argparse
@@ -429,6 +581,14 @@ if __name__ == '__main__':
     # create the parser for the "addcolumn" command
     addcolumn_parser = subparsers.add_parser('addcolumn', help='insert a column')
     _addcolumn_args(addcolumn_parser)
+    
+    # create the parser for the "rename" command
+    rename_parser = subparsers.add_parser('rename', help='rename a column')
+    _rename_args(rename_parser)
+    
+    # create the parser for the "position" command
+    position_parser = subparsers.add_parser('position', help='reposition a column')
+    _position_args(position_parser)
     
     # create the parser for the "dropcolumn" command
     dropcolumn_parser = subparsers.add_parser('dropcolumn', help='remove a column')
