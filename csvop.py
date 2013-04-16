@@ -12,6 +12,14 @@ import csv
 import os
 import itertools
 
+def read_csv(filename):
+    with open(filename, 'rbU') as infile:
+        reader = csv.reader(infile)
+        data = []
+        for row in reader:
+            data.append(row)
+        return data
+
 def make_csv(filename, values):
     with open(filename, 'wb') as outfile:
         writer = csv.writer(outfile)
@@ -33,6 +41,29 @@ def count_rows(filename):
             count += 1
             
         return count
+
+def _convert_numbers(row):
+    """Convert any numeric members of the array to be numbers.
+    
+    >>> _convert_numbers(['a', 'b', 'c'])
+    ['a', 'b', 'c']
+    >>> _convert_numbers(['a', 'b', '4'])
+    ['a', 'b', 4]
+    >>> _convert_numbers(['a', 'b', '-2.4'])
+    ['a', 'b', -2.4]
+    """
+    for i in range(len(row)):
+        v = row[i]
+        try:
+            v = int(v)
+            row[i] = v
+        except ValueError:
+            try:
+                v = float(v)
+                row[i] = v
+            except ValueError:
+                pass
+    return row
         
 def col_reference(header, name=None, index=None):
     """Get the index of a column given a name or index
@@ -144,7 +175,11 @@ def write_csv(iterator, filename, header=None, generator=None):
 
     
 def _addcolumn_process(args):
-    return addcolumn(args.input, args.output, args.index, args.name, args.default)
+
+    if args.calc is not None:
+        args.calc = eval('lambda row: %s' % (args.calc))
+        
+    return addcolumn(args.input, args.output, args.index, args.name, args.default, args.calc)
 
 def _addcolumn_args(parser):
     parser.add_argument('input', metavar="INPUT_CSV", help='A csv file to read from')
@@ -152,15 +187,17 @@ def _addcolumn_args(parser):
     parser.add_argument('--index', '-i', type=int, help='The index to insert the column (last by default)', required=False)
     parser.add_argument('--name', '-n', help='The name of the column to add (none by default)', required=False)
     parser.add_argument('--default', '-d', help='The default cell value', required=False)
+    parser.add_argument('--calc', '-c', help='The body of a lambda expression that can calculate values based on the current row')
     parser.set_defaults(func=_addcolumn_process)
 
-def addcolumn(input, output, index=None, col_name=None, cell_val=None):
-    """Add a column with an optional name and default value at a specific index
+def addcolumn(input, output, index=None, col_name=None, cell_val=None, calc=None):
+    """Add a column with an optional name and default value at a specific index.
+    If a calc function is provided, it will be used to compute the value for each row.
     
     Prepare the test
     
     >>> always_confirm(True)
-    >>> make_csv('__test__.csv', [['a', 'b', 'c']])
+    >>> make_csv('__test__.csv', [['a', 'b', 'c'], [0, 0, 0], [1, 2, 3]])
     >>> csv_header('__test__.csv')
     ['a', 'b', 'c']
     
@@ -177,8 +214,16 @@ def addcolumn(input, output, index=None, col_name=None, cell_val=None):
     >>> addcolumn('__test__.csv', '__test2__.csv', col_name="foo", cell_val='asdf') # doctest: +ELLIPSIS
     Adding column "foo" at index 3 with default value "asdf"
     ...
-    >>> csv_header('__test2__.csv')
-    ['a', 'b', 'c', 'foo']
+    >>> read_csv('__test2__.csv')
+    [['a', 'b', 'c', 'foo'], ['0', '0', '0', 'asdf'], ['1', '2', '3', 'asdf']]
+    
+    Test for adding a calculated column
+    
+    >>> addcolumn('__test__.csv', '__test2__.csv', col_name="sum", calc=sum) # doctest: +ELLIPSIS
+    Adding calculated column "sum" at index 3
+    ...
+    >>> read_csv('__test2__.csv')
+    [['a', 'b', 'c', 'sum'], ['0', '0', '0', '0'], ['1', '2', '3', '6']]
     
     Clean up
     
@@ -201,17 +246,31 @@ def addcolumn(input, output, index=None, col_name=None, cell_val=None):
             cell_val = ''
         
         # what goes in the header? by default same as cells
-        if col_name is None:
+        if col_name is None and calc is None:
             col_name = cell_val
         
-        print 'Adding column "%s" at index %d with default value "%s"' %(col_name, index, cell_val)
+        if calc is None:
+            print 'Adding column "%s" at index %d with default value "%s"' %(col_name, index, cell_val)
+        else:
+            print 'Adding calculated column "%s" at index %d' %(col_name, index)
         
         def generator(rowNum, row):
             if rowNum == 0:
                 # it is the header
-                row.insert(index, col_name)
+                if calc is not None and col_name is None:
+                    _convert_numbers(row)
+                    val = calc(row)
+                else:
+                    val = col_name
+                    
+                row.insert(index, val)
             else:
-                row.insert(index, cell_val)
+                if calc is not None:
+                    _convert_numbers(row)
+                    val = calc(row)
+                else:
+                    val = cell_val
+                row.insert(index, val)
             return row
         
         write_csv(reader, output, header=header, generator=generator)
